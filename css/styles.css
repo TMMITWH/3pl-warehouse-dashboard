@@ -351,3 +351,8 @@ footer {
   border: 1px solid #46505E; align-self: flex-start;
 }
 .btn-logout:hover { background: var(--ink-2); color: #fff; }
+
+/* ---------- Export buttons ---------- */
+.toolbar-spacer { flex: 1; }
+.btn-outline { background: transparent; color: var(--ink); border: 1px solid var(--ink); }
+.btn-outline:hover { background: var(--concrete); }
