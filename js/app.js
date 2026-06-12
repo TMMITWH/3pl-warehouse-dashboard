@@ -143,9 +143,11 @@
   }
 
   let A = null; // current aggregate, used by table search handlers
+  let PERIOD = { from: "", to: "" }; // current filter, used by exports
 
   function renderAll() {
     const from = elFrom.value, to = elTo.value;
+    PERIOD = { from, to };
     document.getElementById("period-stamp").textContent =
       `${from.split("-").reverse().join(".")} – ${to.split("-").reverse().join(".")}`;
 
@@ -354,6 +356,150 @@
   document.getElementById("jobs-dir").addEventListener("change", drawJobs);
   document.getElementById("jobs-search").addEventListener("input", drawJobs);
   document.getElementById("tx-search").addEventListener("input", drawTxTable);
+
+  // ================= EXPORTS =================
+  const r3 = (n) => Math.round(Number(n || 0) * 1000) / 1000;
+
+  function exportExcel() {
+    if (!A || typeof XLSX === "undefined") return;
+    const wb = XLSX.utils.book_new();
+    const add = (name, aoa, widths) => {
+      const ws = XLSX.utils.aoa_to_sheet(aoa);
+      if (widths) ws["!cols"] = widths.map((w) => ({ wch: w }));
+      XLSX.utils.book_append_sheet(wb, ws, name);
+    };
+
+    add("Summary", [
+      ["3PL WAREHOUSE OPERATIONS REPORT"],
+      ["Period", `${PERIOD.from} to ${PERIOD.to}`],
+      ["Generated", new Date().toLocaleString()],
+      [],
+      ["KPI", "Value"],
+      ["Containers In", A.kpi.cntrCount],
+      ["Container Volume (CBM)", r3(A.kpi.cntrVol)],
+      ["LCL Volume (CBM)", r3(A.kpi.lclVol)],
+      ["Inbound Jobs", A.kpi.impJobs],
+      ["Outbound Jobs", A.kpi.expJobs],
+      ["Total Throughput (CBM)", r3(A.kpi.totVol)],
+    ], [30, 26]);
+
+    add("Inbound Containers", [
+      ["Code", "Principal", "Containers", "Volume CBM"],
+      ...A.containers.map((r) => [r.code, r.name, r.cntr, r3(r.vol)]),
+      ["", "GRAND TOTAL", sumK(A.containers, "cntr"), r3(sumK(A.containers, "vol"))],
+    ], [8, 42, 12, 12]);
+
+    add("Inbound LCL", [
+      ["Code", "Principal", "LCL Volume CBM"],
+      ...A.lcl.map((r) => [r.code, r.name, r3(r.vol)]),
+      ["", "GRAND TOTAL", r3(sumK(A.lcl, "vol"))],
+    ], [8, 42, 16]);
+
+    add("Staff Jobs", [
+      ["User", "IMP", "EXP", "Total"],
+      ...A.staff.map((r) => [r.staff, r.imp, r.exp, r.imp + r.exp]),
+      ["GRAND TOTAL", sumK(A.staff, "imp"), sumK(A.staff, "exp"),
+       sumK(A.staff, "imp") + sumK(A.staff, "exp")],
+    ], [16, 8, 8, 8]);
+
+    add("In-Out Jobs", [
+      ["Created By", "Direction", "Customer / Party", "Jobs"],
+      ...A.jobs.map((r) => [r.staff, r.dir, r.party, r.jobs]),
+      ["", "", "GRAND TOTAL", sumK(A.jobs, "jobs")],
+    ], [16, 10, 42, 8]);
+
+    add("Customer Transactions", [
+      ["Code", "Principal", "IMP Vol", "EXP Vol", "Total Vol"],
+      ...A.tx.map((r) => [r.code, r.name, r3(r.imp), r3(r.exp), r3(r.imp + r.exp)]),
+      ["", "GRAND TOTAL", r3(sumK(A.tx, "imp")), r3(sumK(A.tx, "exp")),
+       r3(sumK(A.tx, "imp") + sumK(A.tx, "exp"))],
+    ], [8, 42, 12, 12, 12]);
+
+    add("Daily Volumes", [
+      ["Date", "Inbound CBM", "Outbound CBM", "Total CBM"],
+      ...A.daily.map((r) => [r.d, r3(r.imp), r3(r.exp), r3(r.imp + r.exp)]),
+      ["GRAND TOTAL", r3(sumK(A.daily, "imp")), r3(sumK(A.daily, "exp")),
+       r3(sumK(A.daily, "imp") + sumK(A.daily, "exp"))],
+    ], [12, 14, 14, 14]);
+
+    XLSX.writeFile(wb, `warehouse_report_${PERIOD.from}_to_${PERIOD.to}.xlsx`);
+  }
+
+  function printReport() {
+    if (!A) return;
+    const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+    const tbl = (headers, rows, foot) =>
+      `<table><thead><tr>${headers.map((h) => `<th>${h}</th>`).join("")}</tr></thead>` +
+      `<tbody>${rows.map((r) => `<tr>${r.map((c, i) =>
+        `<td class="${i >= headers.length - (headers.length > 2 ? headers.length - 2 : 1) && typeof c !== "string" ? "n" : (typeof c === "number" ? "n" : "")}">${typeof c === "number" ? c.toLocaleString("en-US", { maximumFractionDigits: 3 }) : esc(c)}</td>`).join("")}</tr>`).join("")}</tbody>` +
+      (foot ? `<tfoot><tr>${foot.map((c) => `<td class="${typeof c === "number" ? "n" : ""}">${typeof c === "number" ? c.toLocaleString("en-US", { maximumFractionDigits: 3 }) : esc(c)}</td>`).join("")}</tr></tfoot>` : "") +
+      `</table>`;
+
+    const html = `<!DOCTYPE html><html><head><title>Warehouse Report ${PERIOD.from} to ${PERIOD.to}</title>
+<style>
+  body { font-family: Arial, sans-serif; font-size: 11px; color: #121821; margin: 24px; }
+  h1 { font-size: 18px; text-transform: uppercase; letter-spacing: 1px; margin: 0 0 2px; }
+  .meta { font-size: 11px; color: #555; margin-bottom: 14px; }
+  h2 { font-size: 13px; text-transform: uppercase; border-bottom: 2px solid #121821;
+       padding-bottom: 3px; margin: 18px 0 6px; page-break-after: avoid; }
+  table { width: 100%; border-collapse: collapse; page-break-inside: auto; }
+  tr { page-break-inside: avoid; }
+  th { text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;
+       border-bottom: 1.5px solid #121821; padding: 4px 6px; }
+  td { padding: 3px 6px; border-bottom: 0.5px solid #ccc; }
+  td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
+  tfoot td { font-weight: bold; border-top: 1.5px solid #121821; border-bottom: none; }
+  .kpis { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+  .kpi { border: 1px solid #121821; border-top: 4px solid #F5A300; padding: 6px 12px; }
+  .kpi b { display: block; font-size: 16px; }
+  .kpi span { font-size: 9px; text-transform: uppercase; letter-spacing: 1px; color: #555; }
+  @media print { .kpi { -webkit-print-color-adjust: exact; } }
+</style></head><body>
+<h1>3PL Warehouse Operations Report</h1>
+<div class="meta">Period: <b>${PERIOD.from} to ${PERIOD.to}</b> &nbsp;·&nbsp; Generated: ${new Date().toLocaleString()}</div>
+<div class="kpis">
+  <div class="kpi"><span>Containers In</span><b>${A.kpi.cntrCount.toLocaleString()}</b></div>
+  <div class="kpi"><span>CNTR Vol CBM</span><b>${r3(A.kpi.cntrVol).toLocaleString()}</b></div>
+  <div class="kpi"><span>LCL Vol CBM</span><b>${r3(A.kpi.lclVol).toLocaleString()}</b></div>
+  <div class="kpi"><span>Inbound Jobs</span><b>${A.kpi.impJobs.toLocaleString()}</b></div>
+  <div class="kpi"><span>Outbound Jobs</span><b>${A.kpi.expJobs.toLocaleString()}</b></div>
+  <div class="kpi"><span>Total CBM</span><b>${r3(A.kpi.totVol).toLocaleString()}</b></div>
+</div>
+<h2>Daily Volumes</h2>
+${tbl(["Date", "Inbound CBM", "Outbound CBM", "Total CBM"],
+  A.daily.map((r) => [r.d, r3(r.imp), r3(r.exp), r3(r.imp + r.exp)]),
+  ["Grand Total", r3(sumK(A.daily, "imp")), r3(sumK(A.daily, "exp")), r3(sumK(A.daily, "imp") + sumK(A.daily, "exp"))])}
+<h2>Inbound Status — Containers</h2>
+${tbl(["Code", "Principal", "Containers", "Volume CBM"],
+  A.containers.map((r) => [r.code, r.name, r.cntr, r3(r.vol)]),
+  ["", "Grand Total", sumK(A.containers, "cntr"), r3(sumK(A.containers, "vol"))])}
+<h2>Inbound Status — LCL</h2>
+${tbl(["Code", "Principal", "LCL Volume CBM"],
+  A.lcl.map((r) => [r.code, r.name, r3(r.vol)]),
+  ["", "Grand Total", r3(sumK(A.lcl, "vol"))])}
+<h2>Staff-wise Confirmed Jobs</h2>
+${tbl(["User", "IMP", "EXP", "Total"],
+  A.staff.map((r) => [r.staff, r.imp, r.exp, r.imp + r.exp]),
+  ["Grand Total", sumK(A.staff, "imp"), sumK(A.staff, "exp"), sumK(A.staff, "imp") + sumK(A.staff, "exp")])}
+<h2>Staff-wise Customer Inbound &amp; Outbound Jobs</h2>
+${tbl(["Created By", "Dir", "Customer / Party", "Jobs"],
+  A.jobs.map((r) => [r.staff, r.dir, r.party, r.jobs]),
+  ["", "", "Grand Total", sumK(A.jobs, "jobs")])}
+<h2>Customer-wise Transactions In &amp; Out</h2>
+${tbl(["Code", "Principal", "IMP Vol", "EXP Vol", "Total Vol"],
+  A.tx.map((r) => [r.code, r.name, r3(r.imp), r3(r.exp), r3(r.imp + r.exp)]),
+  ["", "Grand Total", r3(sumK(A.tx, "imp")), r3(sumK(A.tx, "exp")), r3(sumK(A.tx, "imp") + sumK(A.tx, "exp"))])}
+<script>window.onload = function(){ window.print(); };<\/script>
+</body></html>`;
+
+    const w = window.open("", "_blank");
+    if (!w) { alert("Please allow pop-ups for this site to print the report."); return; }
+    w.document.write(html);
+    w.document.close();
+  }
+
+  document.getElementById("btn-excel").addEventListener("click", exportExcel);
+  document.getElementById("btn-print").addEventListener("click", printReport);
 
   renderAll();
 })();
