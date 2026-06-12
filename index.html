@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="css/styles.css" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
 <body>
 
@@ -36,6 +37,9 @@
         <input type="date" id="date-to" aria-label="Period to" />
         <button class="btn" id="btn-7d" type="button">Last 7 Days</button>
         <button class="btn" id="btn-full" type="button">Full Range</button>
+        <span class="toolbar-spacer"></span>
+        <button class="btn btn-outline" id="btn-excel" type="button">⬇ Excel</button>
+        <button class="btn btn-outline" id="btn-print" type="button">🖨 Print / PDF</button>
       </div>
     </section>
 
